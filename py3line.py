@@ -117,7 +117,10 @@ class block_mpd():
             #  Playing a radio station
             name = data["name"]
             try:
-                title = re.sub("_{1,}", " ", data["title"])
+                if " " in data["title"]:
+                    title = data["title"]
+                else:
+                    title = re.sub("_{1,}", " ", data["title"])
             except KeyError:
                 # MPD hasn't set a title for the station
                 # Just use the name
@@ -125,7 +128,6 @@ class block_mpd():
                 title = data["name"]
             # Workaround for the spaces in Radio Reddit's stream being
             #   replaced by underscores.
-            #TODO Only activate the regex if the title has no spaces
             return json.dumps({
                 "full_text": "{}: {}".format(name, title)
             })
