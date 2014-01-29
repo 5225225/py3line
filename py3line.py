@@ -46,6 +46,45 @@ class block_text():
         })
 
 
+class block_load():
+    def __init__(self):
+        self.loadfilename = "/proc/loadavg"
+        self.cachetime = 0
+
+        self.warnload = 2
+        self.warncolour = "#FFFF00"
+
+        self.critload = 4
+        self.critcolour = "FF0000"
+
+    def update(self):
+        loadfile = open(self.loadfilename)
+        load = loadfile.read()
+        loadfile.close()
+
+        loadlist = load.split(" ")
+
+        colourout = False
+        if float(loadlist[0]) > self.warnload:
+            colour = self.warncolour
+            colourout = True
+
+        if float(loadlist[0]) > self.critload:
+            colour = self.critcolour
+            colourout = True
+
+        if colourout:
+            return json.dumps({
+                "full_text": str(loadlist[0]),
+                "color": colour
+            })
+
+        else:
+            return json.dumps({
+                "full_text": str(loadlist[0])
+            })
+
+
 class block_mpd():
     def __init__(self, hostname="localhost", port=6600):
         self.hostname = hostname
@@ -99,7 +138,7 @@ class block_mpd():
                 "full_text": "{} - {}".format(artist, title)
             })
 
-blocks = [block_mpd(), block_time()]
+blocks = [block_mpd(), block_load(), block_time()]
 
 for item in blocks:
     item.ct = 0
