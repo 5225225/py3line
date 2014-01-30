@@ -152,6 +152,7 @@ headerstring = """{"version":1, "click_events": true}
 sys.stdout.write(headerstring)
 
 while True:
+    starttime = time.time()
     outstr = "["
     for item in blocks:
         if item.ct == 0:
@@ -169,4 +170,4 @@ while True:
     sys.stdout.write(outstr + "\n")
     sys.stdout.flush()
     sys.stderr.flush()
-    time.sleep(1)
+    time.sleep(1 - (time.time() - starttime))
