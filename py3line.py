@@ -11,8 +11,8 @@ import requests
 
 
 class block_time():
-    def __init__(self):
-        self.timeformat = "%H:%M"
+    def __init__(self, formatstr="%H:%M"):
+        self.timeformat = formatstr
         self.cachetime = 0
 
     def update(self):
@@ -22,10 +22,10 @@ class block_time():
 
 
 class block_reddit():
-    def __init__(self):
-        self.redditurl = "http://www.reddit.com/user/5225225/about.json"
+    def __init__(self, username, formatstr="L:{link_karma} C:{comment_karma}"):
+        self.redditurl = "www.reddit.com/user/" + username + "/about.json"
         self.cachetime = 60
-        self.formatstring = "L:{link_karma} C:{comment_karma}"
+        self.formatstring = formatstr
 
     def update(self):
         response = requests.get(self.redditurl)
