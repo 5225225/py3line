@@ -45,6 +45,27 @@ class block_text():
             "full_text": self.text
         })
 
+class block_ip():
+    def __init__(self):
+        self.cachetime = 3600
+    
+    def update(self):
+        ip = requests.get("http://ifconfig.me/ip").text.strip()
+        return json.dumps({
+            "full_text": ip
+        })
+
+
+class block_subprocess():
+    def __init__(self, command):
+        self.command = command
+        self.cachetime = 0
+    
+    def update(self):
+        output = subprocess.check_output(self.command, shell=True)
+        return json.dumps({
+                "full_text": output.decode("UTF-8").strip()
+            })
 
 class block_load():
     def __init__(self):
@@ -140,7 +161,7 @@ class block_mpd():
                 "full_text": "{} - {}".format(artist, title)
             })
 
-blocks = [block_mpd(), block_load(), block_time()]
+blocks = eval(open("blocks").read().strip())
 
 for item in blocks:
     item.ct = 0
@@ -170,4 +191,8 @@ while True:
     sys.stdout.write(outstr + "\n")
     sys.stdout.flush()
     sys.stderr.flush()
-    time.sleep(1 - (time.time() - starttime))
+    try:
+        time.sleep(1 - (time.time() - starttime))
+    except ValueError:
+        pass
+        # All of them took more than 1 second combined, forget the pause.
