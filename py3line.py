@@ -166,7 +166,7 @@ blocks = eval(open("blocks").read().strip())
 for item in blocks:
     item.ct = 0
 
-headerstring = """{"version":1, "click_events": true}
+headerstring = """{"version":1}
 [
 """
 
