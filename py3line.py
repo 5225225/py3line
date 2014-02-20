@@ -8,15 +8,16 @@ import socket
 import re
 
 import requests
-
+import asyncio
 
 class block_time():
     def __init__(self, formatstr="%H:%M"):
         self.timeformat = formatstr
         self.cachetime = 0
 
+    @asyncio.coroutine
     def update(self):
-        return json.dumps({
+        yield from json.dumps({
             "full_text": time.strftime(self.timeformat)
         })
 
@@ -27,10 +28,11 @@ class block_reddit():
         self.cachetime = 60
         self.formatstring = formatstr
 
+    @asyncio.coroutine
     def update(self):
         response = requests.get(self.redditurl)
         userdata = json.loads(response.text)["data"]
-        return json.dumps({
+        yield from json.dumps({
             "full_text": self.formatstring.format_map(userdata)
         })
 
@@ -40,18 +42,21 @@ class block_text():
         self.text = text
         self.cachetime = 0
 
+    @asyncio.coroutine
     def update(self):
-        return json.dumps({
+        yield from json.dumps({
             "full_text": self.text
         })
+
 
 class block_ip():
     def __init__(self):
         self.cachetime = 3600
-    
+
+    @asyncio.coroutine
     def update(self):
         ip = requests.get("http://ifconfig.me/ip").text.strip()
-        return json.dumps({
+        yield from json.dumps({
             "full_text": ip
         })
 
@@ -60,12 +65,14 @@ class block_subprocess():
     def __init__(self, command):
         self.command = command
         self.cachetime = 0
-    
+
+    @asyncio.coroutine
     def update(self):
         output = subprocess.check_output(self.command, shell=True)
-        return json.dumps({
-                "full_text": output.decode("UTF-8").strip()
-            })
+        yield from json.dumps({
+            "full_text": output.decode("UTF-8").strip()
+        })
+
 
 class block_load():
     def __init__(self):
@@ -78,6 +85,7 @@ class block_load():
         self.critload = 4
         self.critcolour = "FF0000"
 
+    @asyncio.coroutine
     def update(self):
         loadfile = open(self.loadfilename)
         load = loadfile.read()
@@ -95,13 +103,13 @@ class block_load():
             colourout = True
 
         if colourout:
-            return json.dumps({
+            yield from json.dumps({
                 "full_text": str(loadlist[0]),
                 "color": colour
             })
 
         else:
-            return json.dumps({
+            yield from json.dumps({
                 "full_text": str(loadlist[0])
             })
 
@@ -112,12 +120,13 @@ class block_mpd():
         self.port = port
         self.cachetime = 0
 
+    @asyncio.coroutine
     def update(self):
         self.mpdsoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.mpdsoc.connect((self.hostname, self.port))
         except ConnectionRefusedError:
-            return json.dumps({"full_text": ""})
+            yield from json.dumps({"full_text": ""})
         okay = self.mpdsoc.recv(2**12)
         assert okay == b"OK MPD 0.16.0\n"
 
@@ -132,7 +141,7 @@ class block_mpd():
 
         if data == {}:
             #MPD isn't playing anything, but it's running. Return nothing.
-            return json.dumps({"full_text": ""})
+            yield from json.dumps({"full_text": ""})
 
         elif data["file"].startswith("http://"):
             #  Playing a radio station
@@ -149,7 +158,7 @@ class block_mpd():
                 title = data["name"]
             # Workaround for the spaces in Radio Reddit's stream being
             #   replaced by underscores.
-            return json.dumps({
+            yield from json.dumps({
                 "full_text": "{}: {}".format(name, title)
             })
 
@@ -157,7 +166,7 @@ class block_mpd():
             #  Playing a local file
             artist = data["artist"]
             title = data["title"]
-            return json.dumps({
+            yield from json.dumps({
                 "full_text": "{} - {}".format(artist, title)
             })
 
@@ -165,6 +174,7 @@ blocks = eval(open("blocks").read().strip())
 
 for item in blocks:
     item.ct = 0
+    item.cachestr = ""
 
 headerstring = """{"version":1}
 [
@@ -178,19 +188,22 @@ while True:
     for item in blocks:
         if item.ct == 0:
             stime = time.time()
-            item.cachestr = item.update()
+            item.task = asyncio.async(item.update())
             sys.stderr.write("\t{}: {} SEC\n".format(
                 str(item),
                 time.time() - stime))
             item.ct = item.cachetime
         else:
             item.ct -= 1
+        asyncio.wait_for(item.task,None)
+        item.cachestr = item.task.result()
         outstr = outstr + item.cachestr + ","
     outstr = outstr[:-1]
     outstr = outstr + "],"
     sys.stdout.write(outstr + "\n")
     sys.stdout.flush()
     sys.stderr.flush()
+
     try:
         time.sleep(1 - (time.time() - starttime))
     except ValueError:
