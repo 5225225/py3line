@@ -182,6 +182,7 @@ headerstring = """{"version":1}
 
 sys.stdout.write(headerstring)
 
+
 while True:
     starttime = time.time()
     outstr = "["
@@ -195,7 +196,6 @@ while True:
             item.ct = item.cachetime
         else:
             item.ct -= 1
-        asyncio.wait_for(item.task,None)
         item.cachestr = item.task.result()
         outstr = outstr + item.cachestr + ","
     outstr = outstr[:-1]
