@@ -10,14 +10,17 @@ import re
 import requests
 import asyncio
 
+
+from asyncio.tasks import iscoroutine
+
+
 class block_time():
     def __init__(self, formatstr="%H:%M"):
         self.timeformat = formatstr
         self.cachetime = 0
 
-    @asyncio.coroutine
     def update(self):
-        yield from json.dumps({
+        return json.dumps({
             "full_text": time.strftime(self.timeformat)
         })
 
@@ -28,11 +31,11 @@ class block_reddit():
         self.cachetime = 60
         self.formatstring = formatstr
 
-    @asyncio.coroutine
     def update(self):
+        # FIXME: do this request using the aiohttp library
         response = requests.get(self.redditurl)
         userdata = json.loads(response.text)["data"]
-        yield from json.dumps({
+        return json.dumps({
             "full_text": self.formatstring.format_map(userdata)
         })
 
@@ -44,7 +47,7 @@ class block_text():
 
     @asyncio.coroutine
     def update(self):
-        yield from json.dumps({
+        return json.dumps({
             "full_text": self.text
         })
 
@@ -55,8 +58,9 @@ class block_ip():
 
     @asyncio.coroutine
     def update(self):
+        # FIXME: do this request using the aiohttp library
         ip = requests.get("http://ifconfig.me/ip").text.strip()
-        yield from json.dumps({
+        return json.dumps({
             "full_text": ip
         })
 
@@ -68,8 +72,25 @@ class block_subprocess():
 
     @asyncio.coroutine
     def update(self):
-        output = subprocess.check_output(self.command, shell=True)
-        yield from json.dumps({
+        loop = asyncio.get_event_loop()
+
+        protocol = asyncio.subprocess.SubprocessStreamProtocol(limit=2**16, loop=loop)
+        future = loop.subprocess_shell(lambda: protocol, self.command)
+        transport, protocol = yield from future
+
+        # wait for the process to start
+        yield from protocol.waiter
+
+        # create a higher level object so we can wait for the process to finish
+        process = asyncio.subprocess.Process(transport, protocol, loop)
+
+        # wait until the process finishes
+        yield from process.wait()
+
+        # red the output from the process
+        output = yield from process.stdout.read()
+
+        return json.dumps({
             "full_text": output.decode("UTF-8").strip()
         })
 
@@ -103,13 +124,13 @@ class block_load():
             colourout = True
 
         if colourout:
-            yield from json.dumps({
+            return json.dumps({
                 "full_text": str(loadlist[0]),
                 "color": colour
             })
 
         else:
-            yield from json.dumps({
+            return json.dumps({
                 "full_text": str(loadlist[0])
             })
 
@@ -122,11 +143,14 @@ class block_mpd():
 
     @asyncio.coroutine
     def update(self):
+        # FIXME: ideally this would use asynchronous streams. Not required, but
+        # would make a lot of sense.
+        # See http://docs.python.org/3.4/library/asyncio-stream.html#asyncio.open_connection for details.
         self.mpdsoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.mpdsoc.connect((self.hostname, self.port))
         except ConnectionRefusedError:
-            yield from json.dumps({"full_text": ""})
+            return json.dumps({"full_text": ""})
         okay = self.mpdsoc.recv(2**12)
         assert okay == b"OK MPD 0.16.0\n"
 
@@ -158,7 +182,7 @@ class block_mpd():
                 title = data["name"]
             # Workaround for the spaces in Radio Reddit's stream being
             #   replaced by underscores.
-            yield from json.dumps({
+            return json.dumps({
                 "full_text": "{}: {}".format(name, title)
             })
 
@@ -166,46 +190,61 @@ class block_mpd():
             #  Playing a local file
             artist = data["artist"]
             title = data["title"]
-            yield from json.dumps({
+            return json.dumps({
                 "full_text": "{} - {}".format(artist, title)
             })
 
-blocks = eval(open("blocks").read().strip())
 
-for item in blocks:
-    item.ct = 0
-    item.cachestr = ""
+@asyncio.coroutine
+def main():
+    blocks = eval(open("blocks").read().strip())
 
-headerstring = """{"version":1}
-[
-"""
-
-sys.stdout.write(headerstring)
-
-
-while True:
-    starttime = time.time()
-    outstr = "["
     for item in blocks:
-        if item.ct == 0:
-            stime = time.time()
-            item.task = asyncio.async(item.update())
-            sys.stderr.write("\t{}: {} SEC\n".format(
-                str(item),
-                time.time() - stime))
-            item.ct = item.cachetime
-        else:
-            item.ct -= 1
-        item.cachestr = item.task.result()
-        outstr = outstr + item.cachestr + ","
-    outstr = outstr[:-1]
-    outstr = outstr + "],"
-    sys.stdout.write(outstr + "\n")
-    sys.stdout.flush()
-    sys.stderr.flush()
+        item.ct = 0
+        item.cachestr = ""
 
-    try:
-        time.sleep(1 - (time.time() - starttime))
-    except ValueError:
-        pass
-        # All of them took more than 1 second combined, forget the pause.
+    headerstring = """{"version":1}
+    [
+    """
+
+    sys.stdout.write(headerstring)
+
+    while True:
+        starttime = time.time()
+        outstr = "["
+        for item in blocks:
+            if item.ct == 0:
+                stime = time.time()
+                future_or_result = item.update()
+
+                # if the update method is proven to be asynchronous, e.g. it's
+                # running a subprocess, or doing some network activity, then
+                # we'll get the result by yielding from it
+                if iscoroutine(future_or_result):
+                    result = yield from future_or_result
+                else:
+                    result = future_or_result
+
+                sys.stderr.write("\t{}: {} SEC\n".format(
+                    str(result),
+                    time.time() - stime))
+                item.ct = item.cachetime
+            else:
+                item.ct -= 1
+            item.cachestr = result
+            outstr = outstr + item.cachestr + ","
+        outstr = outstr[:-1]
+        outstr = outstr + "],"
+        sys.stdout.write(outstr + "\n")
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        try:
+            time.sleep(1 - (time.time() - starttime))
+        except ValueError:
+            pass
+            # All of them took more than 1 second combined, forget the pause.
+
+
+if __name__ == '__main__':
+    asyncio.get_event_loop().run_until_complete(main())
