@@ -13,8 +13,37 @@ import asyncio
 
 from asyncio.tasks import iscoroutine
 
+UPDATE_QUEUE = asyncio.Queue()
 
-class block_time():
+
+class block_base:
+    def start(self):
+        asyncio.async(self.updater())
+
+    @asyncio.coroutine
+    def updater(self):
+        while True:
+            # if the update method is proven to be asynchronous, e.g. it's
+            # running a subprocess, or doing some network activity, then
+            # we'll get the result by yielding from it
+            future_or_result = self.update()
+
+            if iscoroutine(future_or_result):
+                result = yield from future_or_result
+            else:
+                result = future_or_result
+            self.cachestr = result
+
+            # tell the printing coroutine that it's time to update
+            print('time to update', self.command)
+            yield from UPDATE_QUEUE.put(True)
+
+            # put this coroutine to sleep until it's time to update again
+            # sleep for a minimum of one second so we don't update as fast as possible.
+            yield from asyncio.sleep(self.cachetime or 1)
+
+
+class block_time(block_base):
     def __init__(self, formatstr="%H:%M"):
         self.timeformat = formatstr
         self.cachetime = 0
@@ -25,7 +54,7 @@ class block_time():
         })
 
 
-class block_reddit():
+class block_reddit(block_base):
     def __init__(self, username, formatstr="L:{link_karma} C:{comment_karma}"):
         self.redditurl = "www.reddit.com/user/" + username + "/about.json"
         self.cachetime = 60
@@ -40,7 +69,7 @@ class block_reddit():
         })
 
 
-class block_text():
+class block_text(block_base):
     def __init__(self, text="Hello world!"):
         self.text = text
         self.cachetime = 0
@@ -52,7 +81,7 @@ class block_text():
         })
 
 
-class block_ip():
+class block_ip(block_base):
     def __init__(self):
         self.cachetime = 3600
 
@@ -65,7 +94,7 @@ class block_ip():
         })
 
 
-class block_subprocess():
+class block_subprocess(block_base):
     def __init__(self, command):
         self.command = command
         self.cachetime = 0
@@ -95,7 +124,7 @@ class block_subprocess():
         })
 
 
-class block_load():
+class block_load(block_base):
     def __init__(self):
         self.loadfilename = "/proc/loadavg"
         self.cachetime = 0
@@ -135,7 +164,7 @@ class block_load():
             })
 
 
-class block_mpd():
+class block_mpd(block_base):
     def __init__(self, hostname="localhost", port=6600):
         self.hostname = hostname
         self.port = port
@@ -200,8 +229,8 @@ def main():
     blocks = eval(open("blocks").read().strip())
 
     for item in blocks:
-        item.ct = 0
-        item.cachestr = ""
+        item.cachestr = json.dumps({"full_text": ""})
+        item.start()
 
     headerstring = """{"version":1}
     [
@@ -211,27 +240,11 @@ def main():
 
     while True:
         starttime = time.time()
+
+        yield from UPDATE_QUEUE.get()
+
         outstr = "["
         for item in blocks:
-            if item.ct == 0:
-                stime = time.time()
-                future_or_result = item.update()
-
-                # if the update method is proven to be asynchronous, e.g. it's
-                # running a subprocess, or doing some network activity, then
-                # we'll get the result by yielding from it
-                if iscoroutine(future_or_result):
-                    result = yield from future_or_result
-                else:
-                    result = future_or_result
-
-                sys.stderr.write("\t{}: {} SEC\n".format(
-                    str(result),
-                    time.time() - stime))
-                item.ct = item.cachetime
-            else:
-                item.ct -= 1
-            item.cachestr = result
             outstr = outstr + item.cachestr + ","
         outstr = outstr[:-1]
         outstr = outstr + "],"
