@@ -35,7 +35,6 @@ class block_base:
             self.cachestr = result
 
             # tell the printing coroutine that it's time to update
-            print('time to update', self.command)
             yield from UPDATE_QUEUE.put(True)
 
             # put this coroutine to sleep until it's time to update again
