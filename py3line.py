@@ -132,7 +132,7 @@ class block_load(block_base):
         self.warncolour = "#FFFF00"
 
         self.critload = 4
-        self.critcolour = "FF0000"
+        self.critcolour = "#FF0000"
 
     @asyncio.coroutine
     def update(self):
@@ -175,6 +175,9 @@ class block_mpd(block_base):
         # would make a lot of sense.
         # See http://docs.python.org/3.4/library/asyncio-stream.html#asyncio.open_connection for details.
         self.mpdsoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        blockdata = {
+            "full_text": ""
+        }
         try:
             self.mpdsoc.connect((self.hostname, self.port))
         except ConnectionRefusedError:
@@ -185,15 +188,23 @@ class block_mpd(block_base):
         self.mpdsoc.send("currentsong\n".encode("UTF-8"))
         out = self.mpdsoc.recv(2**12).decode("UTF-8")
         data = {}
+        
+        self.mpdsoc.send("status\n".encode("UTF-8"))
+        out2 = self.mpdsoc.recv(2**12).decode("UTF-8")
+        status = {}
 
         for item in out.split("\n"):
             if ":" in item:
                 itemkey, sep, itemvalue = item.partition(":")
                 data[itemkey.lower()] = itemvalue.strip()
 
-        if data == {}:
+        for item in out2.split("\n"):
+            if ":" in item:
+                itemkey, sep, itemvalue = item.partition(":")
+                status[itemkey.lower()] = itemvalue.strip()
+
+        if data == {}: pass
             #MPD isn't playing anything, but it's running. Return nothing.
-            yield from json.dumps({"full_text": ""})
 
         elif data["file"].startswith("http://"):
             #  Playing a radio station
@@ -210,19 +221,21 @@ class block_mpd(block_base):
                 title = data["name"]
             # Workaround for the spaces in Radio Reddit's stream being
             #   replaced by underscores.
-            return json.dumps({
-                "full_text": "{}: {}".format(name, title)
-            })
+            blockdata["full_text"] = "{}: {}".format(name, title)
 
         else:
             #  Playing a local file
-            artist = data["artist"]
+            try:
+                artist = data["artist"]
+            except KeyError:
+                artist = data["albumartist"]
             title = data["title"]
-            return json.dumps({
-                "full_text": "{} - {}".format(artist, title)
-            })
+            blockdata["full_text"] = "{} - {}".format(artist, title)
 
-
+        if status["state"] in ["pause", "stop"]:
+            blockdata["color"] = "#333333"
+            
+        return json.dumps(blockdata)
 @asyncio.coroutine
 def main():
     blocks = eval(open("blocks").read().strip())
@@ -236,6 +249,7 @@ def main():
     """
 
     sys.stdout.write(headerstring)
+    r = asyncio.StreamReader
 
     while True:
         starttime = time.time()
@@ -256,7 +270,5 @@ def main():
         except ValueError:
             pass
             # All of them took more than 1 second combined, forget the pause.
-
-
 if __name__ == '__main__':
     asyncio.get_event_loop().run_until_complete(main())
