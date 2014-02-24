@@ -38,7 +38,8 @@ class block_base:
             yield from UPDATE_QUEUE.put(True)
 
             # put this coroutine to sleep until it's time to update again
-            # sleep for a minimum of one second so we don't update as fast as possible.
+            # sleep for a minimum of one second so
+            # we don't update as fast as possible.
             yield from asyncio.sleep(self.cachetime or 1)
 
 
@@ -102,7 +103,8 @@ class block_subprocess(block_base):
     def update(self):
         loop = asyncio.get_event_loop()
 
-        protocol = asyncio.subprocess.SubprocessStreamProtocol(limit=2**16, loop=loop)
+        protocol = asyncio.subprocess.SubprocessStreamProtocol(
+            limit=2**16, loop=loop)
         future = loop.subprocess_shell(lambda: protocol, self.command)
         transport, protocol = yield from future
 
@@ -173,7 +175,8 @@ class block_mpd(block_base):
     def update(self):
         # FIXME: ideally this would use asynchronous streams. Not required, but
         # would make a lot of sense.
-        # See http://docs.python.org/3.4/library/asyncio-stream.html#asyncio.open_connection for details.
+        # See docs.python.org/3.4/library/
+        #     asyncio-stream.html#asyncio.open_connection for details.
         self.mpdsoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         blockdata = {
             "full_text": ""
@@ -188,7 +191,7 @@ class block_mpd(block_base):
         self.mpdsoc.send("currentsong\n".encode("UTF-8"))
         out = self.mpdsoc.recv(2**12).decode("UTF-8")
         data = {}
-        
+
         self.mpdsoc.send("status\n".encode("UTF-8"))
         out2 = self.mpdsoc.recv(2**12).decode("UTF-8")
         status = {}
@@ -203,7 +206,8 @@ class block_mpd(block_base):
                 itemkey, sep, itemvalue = item.partition(":")
                 status[itemkey.lower()] = itemvalue.strip()
 
-        if data == {}: pass
+        if data == {}:
+            pass
             #MPD isn't playing anything, but it's running. Return nothing.
 
         elif data["file"].startswith("http://"):
@@ -228,14 +232,22 @@ class block_mpd(block_base):
             try:
                 artist = data["artist"]
             except KeyError:
-                artist = data["albumartist"]
-            title = data["title"]
+                if "albumartist" in data:
+                    artist = data["albumartist"]
+                else:
+                    artist = "<ARTIST>"
+            try:
+                title = data["title"]
+            except KeyError:
+                title = "<TITLE>"  # Looks ugly, but at least it doesn't crash
             blockdata["full_text"] = "{} - {}".format(artist, title)
 
         if status["state"] in ["pause", "stop"]:
             blockdata["color"] = "#333333"
-            
+
         return json.dumps(blockdata)
+
+
 @asyncio.coroutine
 def main():
     blocks = eval(open("blocks").read().strip())
