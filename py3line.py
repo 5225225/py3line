@@ -6,6 +6,7 @@ import json
 import subprocess
 import socket
 import re
+import os
 
 import requests
 import asyncio
@@ -14,7 +15,7 @@ import asyncio
 from asyncio.tasks import iscoroutine
 
 UPDATE_QUEUE = asyncio.Queue()
-
+os.chdir(sys.path[0])
 
 class block_base:
     def start(self):
