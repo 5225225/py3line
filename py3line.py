@@ -15,7 +15,11 @@ import asyncio
 from asyncio.tasks import iscoroutine
 
 UPDATE_QUEUE = asyncio.Queue()
-os.chdir(sys.path[0])
+try:
+    os.chdir(sys.path[0])
+except FileNotFoundError:
+    pass
+
 
 class block_base:
     def start(self):
@@ -131,11 +135,13 @@ class block_load(block_base):
         self.loadfilename = "/proc/loadavg"
         self.cachetime = 0
 
+        self.normalcolour = "#333333"
+
         self.warnload = 2
-        self.warncolour = "#FFFF00"
+        self.warncolour = "#666666"
 
         self.critload = 4
-        self.critcolour = "#FF0000"
+        self.critcolour = "#FFFFFF"
 
     @asyncio.coroutine
     def update(self):
@@ -146,11 +152,15 @@ class block_load(block_base):
         loadlist = load.split(" ")
 
         colourout = False
-        if float(loadlist[0]) > self.warnload:
+        if float(loadlist[0]) < self.warnload:
+            colour = self.normalcolour
+            colourout = True
+
+        if float(loadlist[0]) >= self.warnload:
             colour = self.warncolour
             colourout = True
 
-        if float(loadlist[0]) > self.critload:
+        if float(loadlist[0]) >= self.critload:
             colour = self.critcolour
             colourout = True
 
@@ -262,8 +272,6 @@ def main():
     """
 
     sys.stdout.write(headerstring)
-    r = asyncio.StreamReader
-
     while True:
         starttime = time.time()
 
