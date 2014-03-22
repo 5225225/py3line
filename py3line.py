@@ -131,17 +131,23 @@ class block_subprocess(block_base):
 
 
 class block_load(block_base):
-    def __init__(self):
+    def __init__(self,
+                 normalcolour="#333333",
+                 warnload=2,
+                 warncolour="#666666",
+                 critload=4,
+                 critcolour="#FFFFFF"):
+
         self.loadfilename = "/proc/loadavg"
         self.cachetime = 0
 
-        self.normalcolour = "#333333"
+        self.normalcolour = normalcolour
 
-        self.warnload = 2
-        self.warncolour = "#666666"
+        self.warnload = warnload
+        self.warncolour = warncolour
 
-        self.critload = 4
-        self.critcolour = "#FFFFFF"
+        self.critload = critload
+        self.critcolour = critcolour
 
     @asyncio.coroutine
     def update(self):
